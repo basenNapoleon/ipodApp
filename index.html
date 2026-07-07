@@ -77,8 +77,8 @@ main{max-width:680px;margin:0 auto;padding:8px 16px}
   border-radius:999px;padding:6px 14px;font-size:13px;font-weight:600;white-space:nowrap;
 }
 .chip.on{background:var(--ink);border-color:var(--ink);color:#fff}
-.grid{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}
-@media(min-width:560px){.grid{grid-template-columns:repeat(3,1fr)}}
+.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+@media(min-width:560px){.grid{grid-template-columns:repeat(4,1fr)}}
 .card{
   background:var(--card);border:1px solid var(--line);border-radius:var(--radius);
   overflow:hidden;text-align:left;padding:0;display:flex;flex-direction:column;
@@ -89,15 +89,37 @@ main{max-width:680px;margin:0 auto;padding:8px 16px}
   aspect-ratio:1/1.05;width:100%;object-fit:cover;background:#F2F2F0;display:block;
 }
 .thumb.ph{display:flex;align-items:center;justify-content:center;color:#C9C9C5;font-size:44px}
-.card-body{padding:10px 12px 12px}
-.card-name{font-weight:700;font-size:14px;line-height:1.25}
-.card-meta{display:flex;justify-content:space-between;align-items:center;margin-top:6px}
-.badge{font-size:11px;font-weight:700;padding:2px 8px;border-radius:999px;background:#EFEFED;color:var(--ink-soft)}
+.card-body{padding:8px 9px 10px}
+.card-name{font-weight:700;font-size:12.5px;line-height:1.25}
+.card-meta{display:flex;justify-content:space-between;align-items:center;margin-top:5px;flex-wrap:wrap;gap:2px 6px}
+.badge{font-size:10px;font-weight:700;padding:2px 7px;border-radius:999px;background:#EFEFED;color:var(--ink-soft)}
 .badge.köpt{background:#EAF0FA;color:#3B5FA0}
 .badge.reparation{background:#FBF1E2;color:#9A6A1F}
 .badge.till_salu{background:#FCE9F1;color:var(--accent)}
 .badge.såld{background:#E7F3EB;color:var(--pos)}
-.card-profit{font-size:13px;font-weight:700}
+.card-profit{font-size:12px;font-weight:700}
+
+/* ---------- Flikar ---------- */
+.tabs{display:flex;gap:6px;margin:12px 0 2px;background:#E3E3E1;padding:4px;border-radius:12px}
+.tab{flex:1;border:none;background:transparent;border-radius:9px;padding:8px;font-size:14px;font-weight:700;color:var(--ink-soft)}
+.tab.on{background:#fff;color:var(--ink);box-shadow:0 1px 3px rgba(0,0,0,.08)}
+
+/* ---------- Lager ---------- */
+.stock-row{display:flex;align-items:center;gap:10px;padding:9px 0}
+.stock-row + .stock-row{border-top:1px solid #F1F1EF}
+.stock-thumb{width:44px;height:44px;border-radius:10px;object-fit:cover;background:#F2F2F0;border:1px solid var(--line);flex:none}
+div.stock-thumb{display:flex;align-items:center;justify-content:center;color:#C9C9C5;font-size:17px}
+.stock-info{flex:1;min-width:0}
+.stock-name{font-weight:700;font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.stock-price{font-size:12.5px;color:var(--ink-soft)}
+.qty{display:flex;align-items:center;gap:6px}
+.qty button{width:28px;height:28px;border-radius:50%;border:1px solid var(--line);background:#fff;font-size:16px;font-weight:700;color:var(--ink);line-height:1}
+.qty b{min-width:20px;text-align:center;font-size:15px}
+.stock-photo-btn{
+  width:44px;height:44px;border-radius:10px;border:2px dashed var(--line);
+  background:#fff;color:#C9C9C5;font-size:18px;flex:none;overflow:hidden;padding:0;
+}
+.stock-photo-btn img{width:100%;height:100%;object-fit:cover}
 .pos{color:var(--pos)} .neg{color:var(--neg)} .mut{color:var(--ink-soft)}
 .empty{
   text-align:center;color:var(--ink-soft);padding:56px 20px;font-size:15px;line-height:1.6;
@@ -212,6 +234,11 @@ footer .btn{font-size:13px;padding:10px}
 </header>
 
 <main>
+  <div class="tabs" id="tabs">
+    <button class="tab on" data-tab="viewList">iPods</button>
+    <button class="tab" data-tab="viewStock">Lager</button>
+  </div>
+
   <!-- LISTA -->
   <section class="view on" id="viewList">
     <div class="toolbar" id="filters"></div>
@@ -226,6 +253,9 @@ footer .btn{font-size:13px;padding:10px}
     </footer>
     <p class="hint">Datan sparas lokalt i din webbläsare – exportera en backup då och då.</p>
   </section>
+
+  <!-- LAGER -->
+  <section class="view" id="viewStock"></section>
 
   <!-- DETALJ -->
   <section class="view" id="viewDetail"></section>
@@ -248,16 +278,24 @@ footer .btn{font-size:13px;padding:10px}
 "use strict";
 /* ================= Data ================= */
 const KEY = "ipodlogg.v1";
+const SKEY = "ipodlogg.stock.v1";
 const STATUSES = ["köpt","reparation","till salu","såld"];
 let items = load();
+let stock = loadStock();
 let filter = "alla";
 let editingId = null;
+let currentView = "viewList";
 
 function load(){
   try{ return JSON.parse(localStorage.getItem(KEY)) || []; }
   catch(e){ return []; }
 }
 function save(){ localStorage.setItem(KEY, JSON.stringify(items)); }
+function loadStock(){
+  try{ return JSON.parse(localStorage.getItem(SKEY)) || []; }
+  catch(e){ return []; }
+}
+function saveStock(){ localStorage.setItem(SKEY, JSON.stringify(stock)); }
 function uid(){ return Date.now().toString(36) + Math.random().toString(36).slice(2,7); }
 function find(id){ return items.find(i=>i.id===id); }
 
@@ -325,6 +363,82 @@ function renderList(){
   }).join("");
 }
 
+/* ================= Lager ================= */
+let stockPhoto = null;
+function renderStock(){
+  renderLCD();
+  const rows = stock.map(s=>{
+    const img = s.photo
+      ? `<img class="stock-thumb" src="${s.photo}" alt="">`
+      : `<div class="stock-thumb">🔩</div>`;
+    return `<div class="stock-row" data-sid="${s.id}">
+      ${img}
+      <div class="stock-info">
+        <div class="stock-name">${esc(s.name)}</div>
+        <div class="stock-price">${kr(+s.price||0)}/st</div>
+      </div>
+      <div class="qty">
+        <button data-q="-1">−</button><b>${s.qty||0}</b><button data-q="1">+</button>
+      </div>
+      <button class="del" data-delstock>✕</button>
+    </div>`;
+  }).join("") || `<div class="row"><span class="k mut">Inga delar i lagret ännu</span></div>`;
+
+  document.getElementById("viewStock").innerHTML = `
+    <div class="panel">
+      <h3>Lägg till del</h3>
+      <div class="mini-form">
+        <button class="stock-photo-btn" id="stPhotoBtn">+</button>
+        <input type="text" id="stName" placeholder="Del (t.ex. batteri 850mAh)">
+      </div>
+      <div class="mini-form">
+        <input type="number" id="stPrice" placeholder="pris/st (kr)" inputmode="numeric">
+        <input type="number" id="stQty" placeholder="antal" inputmode="numeric" style="max-width:80px">
+        <button class="btn small" id="stAdd">Lägg till</button>
+      </div>
+      <input type="file" id="stPhotoFile" accept="image/*" hidden>
+      <p class="hint" style="text-align:left">Delarna här blir valbara som standardprodukter när du lägger till delar på en iPod.</p>
+    </div>
+    <div class="panel">
+      <h3>I lager (${stock.reduce((s,x)=>s+(+x.qty||0),0)} st · värde ${kr(stock.reduce((s,x)=>s+(+x.qty||0)*(+x.price||0),0))})</h3>
+      ${rows}
+    </div>
+  `;
+
+  const v = document.getElementById("viewStock");
+  v.querySelector("#stPhotoBtn").onclick = ()=>v.querySelector("#stPhotoFile").click();
+  v.querySelector("#stPhotoFile").onchange = async e=>{
+    const f = e.target.files[0]; if(!f) return;
+    stockPhoto = await compressImage(f, 240, .7);
+    v.querySelector("#stPhotoBtn").innerHTML = `<img src="${stockPhoto}" alt="">`;
+  };
+  v.querySelector("#stAdd").onclick = ()=>{
+    const name = v.querySelector("#stName").value.trim();
+    if(!name) return;
+    stock.unshift({
+      id: uid(),
+      name,
+      price: +v.querySelector("#stPrice").value||0,
+      qty: +v.querySelector("#stQty").value||0,
+      photo: stockPhoto
+    });
+    stockPhoto = null;
+    saveStock(); renderStock();
+  };
+  v.querySelectorAll(".stock-row").forEach(row=>{
+    const s = stock.find(x=>x.id===row.dataset.sid);
+    row.querySelectorAll("[data-q]").forEach(b=>b.onclick=()=>{
+      s.qty = Math.max(0,(+s.qty||0) + +b.dataset.q);
+      saveStock(); renderStock();
+    });
+    row.querySelector("[data-delstock]").onclick = ()=>{
+      if(confirm("Ta bort \""+s.name+"\" ur lagret?")){
+        stock = stock.filter(x=>x.id!==s.id); saveStock(); renderStock();
+      }
+    };
+  });
+}
+
 /* ================= Detalj ================= */
 function renderDetail(id){
   const it = find(id); if(!it) return showView("viewList");
@@ -372,6 +486,12 @@ function renderDetail(id){
     <div class="panel">
       <h3>Delar</h3>
       ${parts}
+      ${stock.length?`<div class="mini-form">
+        <select id="partSel">
+          <option value="">Egen del…</option>
+          ${stock.map(s=>`<option value="${s.id}">${esc(s.name)} · ${kr(+s.price||0)}${(+s.qty||0)>0?` · ${s.qty} i lager`:" · slut"}</option>`).join("")}
+        </select>
+      </div>`:""}
       <div class="mini-form">
         <input type="text" id="partName" placeholder="Del (t.ex. batteri)">
         <input type="number" id="partCost" placeholder="kr" inputmode="numeric" style="max-width:90px">
@@ -418,11 +538,25 @@ function renderDetail(id){
       items = items.filter(x=>x.id!==id); save(); showView("viewList");
     }
   };
+  const sel = v.querySelector("#partSel");
+  if(sel) sel.onchange = ()=>{
+    const s = stock.find(x=>x.id===sel.value);
+    if(s){
+      v.querySelector("#partName").value = s.name;
+      v.querySelector("#partCost").value = +s.price||0;
+    }
+  };
   v.querySelector("#btnAddPart").onclick = ()=>{
     const n = v.querySelector("#partName").value.trim();
     const c = +v.querySelector("#partCost").value||0;
     if(!n) return;
-    (it.parts??=[]).push({name:n,cost:c}); save(); renderDetail(id);
+    (it.parts??=[]).push({name:n,cost:c});
+    // dra av från lagret om delen valdes därifrån
+    if(sel && sel.value){
+      const s = stock.find(x=>x.id===sel.value);
+      if(s && (+s.qty||0)>0){ s.qty--; saveStock(); }
+    }
+    save(); renderDetail(id);
   };
   v.querySelector("#btnAddTime").onclick = ()=>{
     const n = v.querySelector("#timeNote").value.trim();
@@ -543,12 +677,28 @@ function compressImage(file, max=900, quality=.78){
 
 /* ================= Vyer & händelser ================= */
 function showView(id){
+  currentView = id;
   document.querySelectorAll(".view").forEach(v=>v.classList.toggle("on",v.id===id));
-  document.getElementById("wheelWrap").style.display = id==="viewList"?"block":"none";
+  const isTabView = id==="viewList" || id==="viewStock";
+  document.getElementById("wheelWrap").style.display = isTabView?"block":"none";
+  document.getElementById("tabs").style.display = isTabView?"flex":"none";
+  document.querySelectorAll(".tab").forEach(t=>t.classList.toggle("on",t.dataset.tab===id));
   if(id==="viewList") renderList();
+  if(id==="viewStock") renderStock();
   window.scrollTo(0,0);
 }
-document.getElementById("btnAdd").onclick = ()=>openForm(null);
+document.getElementById("tabs").onclick = e=>{
+  const t = e.target.closest("[data-tab]"); if(!t) return;
+  showView(t.dataset.tab);
+};
+document.getElementById("btnAdd").onclick = ()=>{
+  if(currentView==="viewStock"){
+    document.getElementById("stName")?.focus();
+    window.scrollTo({top:0,behavior:"smooth"});
+  }else{
+    openForm(null);
+  }
+};
 document.getElementById("filters").onclick = e=>{
   const f = e.target.closest("[data-f]"); if(!f) return;
   filter = f.dataset.f; renderList();
@@ -560,7 +710,7 @@ document.getElementById("grid").onclick = e=>{
 
 /* Backup */
 document.getElementById("btnExport").onclick = ()=>{
-  const blob = new Blob([JSON.stringify(items,null,2)],{type:"application/json"});
+  const blob = new Blob([JSON.stringify({items,stock},null,2)],{type:"application/json"});
   const a = document.createElement("a");
   a.href = URL.createObjectURL(blob);
   a.download = "ipod-loggen-backup-"+new Date().toISOString().slice(0,10)+".json";
@@ -573,14 +723,42 @@ document.getElementById("importFile").onchange = e=>{
   r.onload = ()=>{
     try{
       const data = JSON.parse(r.result);
-      if(!Array.isArray(data)) throw 0;
-      if(confirm("Ersätt nuvarande data med backupen ("+data.length+" iPods)?")){
-        items = data; save(); renderList();
+      const newItems = Array.isArray(data)? data : data.items;
+      const newStock = Array.isArray(data)? stock : (data.stock||[]);
+      if(!Array.isArray(newItems)) throw 0;
+      if(confirm("Ersätt nuvarande data med backupen ("+newItems.length+" iPods, "+newStock.length+" lagerdelar)?")){
+        items = newItems; stock = newStock;
+        save(); saveStock(); showView(currentView);
       }
     }catch(err){ alert("Kunde inte läsa filen – är det en giltig backup?"); }
   };
   r.readAsText(f);
 };
+
+/* Service worker + uppdaterings-banner */
+if("serviceWorker" in navigator && location.protocol.startsWith("http")){
+  navigator.serviceWorker.register("sw.js").then(reg=>{
+    reg.addEventListener("updatefound", ()=>{
+      const nw = reg.installing;
+      nw.addEventListener("statechange", ()=>{
+        if(nw.state==="installed" && navigator.serviceWorker.controller) showUpdateToast(reg);
+      });
+    });
+    if(reg.waiting && navigator.serviceWorker.controller) showUpdateToast(reg);
+  }).catch(()=>{});
+  let refreshing = false;
+  navigator.serviceWorker.addEventListener("controllerchange", ()=>{
+    if(refreshing) return; refreshing = true; location.reload();
+  });
+}
+function showUpdateToast(reg){
+  if(document.querySelector(".update-toast")) return;
+  const t = document.createElement("div");
+  t.className = "update-toast";
+  t.innerHTML = `Ny version finns <button>Uppdatera</button>`;
+  t.querySelector("button").onclick = ()=>reg.waiting?.postMessage({type:"SKIP_WAITING"});
+  document.body.appendChild(t);
+}
 
 renderList();
 </script>
