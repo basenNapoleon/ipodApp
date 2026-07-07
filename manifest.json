@@ -1,0 +1,12 @@
+{
+  "name": "iPod-loggen",
+  "short_name": "iPod-loggen",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#EDEDEB",
+  "theme_color": "#EDEDEB",
+  "icons": [
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "apple-touch-icon.png", "sizes": "180x180", "type": "image/png" }
+  ]
+}
