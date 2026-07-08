@@ -314,6 +314,9 @@ function loadStock(){
   catch(e){ return []; }
 }
 function saveStock(){ localStorage.setItem(SKEY, JSON.stringify(stock)); }
+const SHKEY = "ipodlogg.shop.v1";
+let shop = (()=>{ try{ return JSON.parse(localStorage.getItem(SHKEY)) || []; }catch(e){ return []; } })();
+function saveShop(){ localStorage.setItem(SHKEY, JSON.stringify(shop)); }
 function uid(){ return Date.now().toString(36) + Math.random().toString(36).slice(2,7); }
 function find(id){ return items.find(i=>i.id===id); }
 
@@ -750,17 +753,63 @@ function renderShopping(){
       </div>`).join("")
   ).join("");
 
+  const shopRows = shop.map(s=>`
+    <div class="todo-row ${s.ordered?"done":""}">
+      <input type="checkbox" data-shid="${s.id}" ${s.ordered?"checked":""}>
+      <span class="todo-text">${esc(s.name)} × ${s.qty}</span>
+      ${s.ordered?`<button class="btn small" data-recv="${s.id}" style="padding:6px 10px;font-size:12px">→ lager</button>`:""}
+      <button class="del" data-delshop="${s.id}">✕</button>
+    </div>`).join("");
+
   document.getElementById("viewShop").innerHTML = `
     <div class="panel">
       <h3>Att beställa (${total} st)</h3>
       ${rows || `<div class="row"><span class="k mut">Inget att beställa – lägg till på en iPods att göra-lista och bocka i "behöver beställas".</span></div>`}
     </div>
-    ${total?`<p class="hint">Bocka i när du lagt beställningen. Punkten försvinner härifrån först när jobbet är klart på iPoden.</p>`:""}
+    <div class="panel">
+      <h3>Till lagret</h3>
+      ${shopRows || `<div class="row"><span class="k mut">Inget extra att beställa hem</span></div>`}
+      <div class="mini-form">
+        <input type="text" id="shName" placeholder="Del (t.ex. batteri 850mAh)">
+        <input type="number" id="shQty" placeholder="antal" inputmode="numeric" style="max-width:80px">
+        <button class="btn small" id="shAdd">Lägg till</button>
+      </div>
+      <p class="hint" style="text-align:left">Bocka i när du beställt, tryck "→ lager" när leveransen kommit så läggs antalet in i lagret.</p>
+    </div>
+    ${total?`<p class="hint">Punkter från iPods försvinner härifrån först när jobbet är klart på iPoden.</p>`:""}
   `;
   document.querySelectorAll("#viewShop [data-oid]").forEach(cb=>cb.onchange=()=>{
     const it = find(cb.dataset.oid);
     it.todos[+cb.dataset.oix].ordered = cb.checked;
     save(); renderShopping();
+  });
+  document.getElementById("shAdd").onclick = ()=>{
+    const name = document.getElementById("shName").value.trim();
+    const qty = +document.getElementById("shQty").value||1;
+    if(!name) return;
+    shop.push({id:uid(), name, qty, ordered:false});
+    saveShop(); renderShopping();
+  };
+  document.querySelectorAll("#viewShop [data-shid]").forEach(cb=>cb.onchange=()=>{
+    shop.find(x=>x.id===cb.dataset.shid).ordered = cb.checked;
+    saveShop(); renderShopping();
+  });
+  document.querySelectorAll("#viewShop [data-delshop]").forEach(b=>b.onclick=()=>{
+    shop = shop.filter(x=>x.id!==b.dataset.delshop);
+    saveShop(); renderShopping();
+  });
+  document.querySelectorAll("#viewShop [data-recv]").forEach(b=>b.onclick=()=>{
+    const s = shop.find(x=>x.id===b.dataset.recv);
+    let target = stock.find(x=>x.name.toLowerCase()===s.name.toLowerCase());
+    if(!target){
+      const price = prompt("Vad kostade \""+s.name+"\" per styck? (kr)");
+      if(price===null) return;
+      target = {id:uid(), name:s.name, price:+price||0, qty:0, photo:null};
+      stock.unshift(target);
+    }
+    target.qty = (+target.qty||0) + s.qty;
+    shop = shop.filter(x=>x.id!==s.id);
+    saveStock(); saveShop(); renderShopping();
   });
 }
 
@@ -800,7 +849,7 @@ document.getElementById("grid").onclick = e=>{
 
 /* Backup */
 document.getElementById("btnExport").onclick = ()=>{
-  const blob = new Blob([JSON.stringify({items,stock},null,2)],{type:"application/json"});
+  const blob = new Blob([JSON.stringify({items,stock,shop},null,2)],{type:"application/json"});
   const a = document.createElement("a");
   a.href = URL.createObjectURL(blob);
   a.download = "ipod-loggen-backup-"+new Date().toISOString().slice(0,10)+".json";
@@ -815,10 +864,11 @@ document.getElementById("importFile").onchange = e=>{
       const data = JSON.parse(r.result);
       const newItems = Array.isArray(data)? data : data.items;
       const newStock = Array.isArray(data)? stock : (data.stock||[]);
+      const newShop = Array.isArray(data)? shop : (data.shop||[]);
       if(!Array.isArray(newItems)) throw 0;
       if(confirm("Ersätt nuvarande data med backupen ("+newItems.length+" iPods, "+newStock.length+" lagerdelar)?")){
-        items = newItems; stock = newStock;
-        save(); saveStock(); showView(currentView);
+        items = newItems; stock = newStock; shop = newShop;
+        save(); saveStock(); saveShop(); showView(currentView);
       }
     }catch(err){ alert("Kunde inte läsa filen – är det en giltig backup?"); }
   };
