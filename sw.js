@@ -1,5 +1,5 @@
 /* iPod-loggen – service worker */
-const VERSION = "v2"; // höj vid behov för att tvinga bort gamla cachade filer
+const VERSION = "v3"; // höj vid behov för att tvinga bort gamla cachade filer
 const CACHE = "ipodlogg-" + VERSION;
 const ASSETS = [
   "./",
