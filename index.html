@@ -78,6 +78,12 @@ header{
 .todo-row.done .todo-text{text-decoration:line-through;color:var(--ink-soft)}
 .tag{font-size:10px;font-weight:700;padding:2px 7px;border-radius:999px;background:#FCE9F1;color:var(--accent);flex:none}
 .tag.ok{background:#E7F3EB;color:var(--pos)}
+.card-pend{font-size:10.5px;font-weight:600;color:#9A6A1F;margin-top:4px}
+.pstat{font-size:10px;font-weight:700;padding:3px 8px;border-radius:999px;border:none;vertical-align:1px}
+.pstat.behövs{background:#FBF1E2;color:#9A6A1F}
+.pstat.ilager{background:#EAF0FA;color:#3B5FA0}
+.pstat.beställd{background:#FCE9F1;color:var(--accent)}
+.pstat.monterad{background:#E7F3EB;color:var(--pos)}
 .shop-ipod{font-weight:700;font-size:12px;color:var(--ink-soft);margin:12px 0 0;text-transform:uppercase;letter-spacing:.05em}
 .buy-check{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--ink-soft);margin-top:10px;font-weight:600}
 .buy-check input{width:18px;height:18px;accent-color:var(--accent);margin:0}
@@ -321,13 +327,35 @@ function uid(){ return Date.now().toString(36) + Math.random().toString(36).slic
 function find(id){ return items.find(i=>i.id===id); }
 
 /* ================= Beräkningar ================= */
-function partsSum(it){ return (it.parts||[]).reduce((s,p)=>s+(+p.cost||0),0); }
+const PSTAT = ["behövs","beställd","monterad"];
+function partsSum(it){ return (it.parts||[]).filter(p=>p.status!=="behövs").reduce((s,p)=>s+(+p.cost||0),0); }
+function plannedSum(it){ return (it.parts||[]).filter(p=>p.status==="behövs").reduce((s,p)=>s+(+p.cost||0),0); }
+function pendingParts(it){ return (it.parts||[]).filter(p=>p.status!=="monterad"); }
+function stockQty(id){ const s = stock.find(x=>x.id===id); return +s?.qty||0; }
 function minutesSum(it){ return (it.time||[]).reduce((s,t)=>s+(+t.min||0),0); }
 function totalCost(it){ return (+it.buyPrice||0) + partsSum(it); }
 function profit(it){
   if(it.status!=="såld" || it.salePrice==null || it.salePrice==="") return null;
   return (+it.salePrice) - totalCost(it);
 }
+
+/* Migrering: äldre delar saknar status, gamla köp-punkter i att göra blir delar */
+(function migrate(){
+  let dirty = false;
+  items.forEach(it=>{
+    (it.parts||[]).forEach(p=>{ if(!p.status){ p.status="monterad"; dirty=true; } });
+    if((it.todos||[]).some(t=>t.buy)){
+      it.todos.filter(t=>t.buy && !t.done).forEach(t=>{
+        const s = stock.find(x=>x.name.toLowerCase()===t.text.toLowerCase());
+        (it.parts??=[]).push({name:t.text, cost:s?+s.price||0:0, stockId:s?.id||null, status:t.ordered?"beställd":"behövs"});
+      });
+      it.todos = it.todos.filter(t=>!(t.buy && !t.done));
+      it.todos.forEach(t=>delete t.buy);
+      dirty = true;
+    }
+  });
+  if(dirty) save();
+})();
 function kr(n){ return new Intl.NumberFormat("sv-SE",{maximumFractionDigits:0}).format(n) + " kr"; }
 function hhmm(min){
   const h = Math.floor(min/60), m = min%60;
@@ -391,6 +419,14 @@ function renderList(){
           <span class="badge ${it.status.replace(" ","_")}">${esc(it.status)}</span>
           ${money}
         </div>
+        ${(()=>{
+          const need = (it.parts||[]).filter(p=>p.status==="behövs").length;
+          const wait = (it.parts||[]).filter(p=>p.status==="beställd").length;
+          const bits = [];
+          if(need) bits.push(need+" behövs");
+          if(wait) bits.push(wait+" på väg");
+          return bits.length? `<div class="card-pend">${bits.join(" · ")}</div>` : "";
+        })()}
       </div>
     </button>`;
   }).join("");
@@ -477,10 +513,13 @@ function renderDetail(id){
   const it = find(id); if(!it) return showView("viewList");
   const p = profit(it);
   const mins = minutesSum(it);
-  const parts = (it.parts||[]).map((pt,ix)=>
-    `<div class="row"><span class="k">${esc(pt.name)}</span>
-     <span class="v">${kr(+pt.cost||0)} <button class="del" data-delpart="${ix}">✕</button></span></div>`
-  ).join("") || `<div class="row"><span class="k mut">Inga delar ännu</span></div>`;
+  const parts = (it.parts||[]).map((pt,ix)=>{
+    const inStock = pt.status==="behövs" && pt.stockId && stockQty(pt.stockId)>0;
+    const label = inStock? "i lager – montera?" : pt.status;
+    const cls = inStock? "ilager" : pt.status;
+    return `<div class="row"><span class="k">${esc(pt.name)} <button class="pstat ${cls}" data-cyc="${ix}">${label}</button></span>
+     <span class="v ${pt.status==="behövs"?"mut":""}">${kr(+pt.cost||0)} <button class="del" data-delpart="${ix}">✕</button></span></div>`;
+  }).join("") || `<div class="row"><span class="k mut">Inga delar ännu</span></div>`;
   const time = (it.time||[]).map((t,ix)=>
     `<div class="row"><span class="k">${esc(t.note||"Arbete")} <span class="mut">${esc(t.date||"")}</span></span>
      <span class="v">${hhmm(+t.min||0)} <button class="del" data-deltime="${ix}">✕</button></span></div>`
@@ -499,7 +538,8 @@ function renderDetail(id){
     <div class="panel">
       <h3>Ekonomi</h3>
       <div class="row"><span class="k">Inköpspris ${it.buyDate?`<span class="mut">${esc(it.buyDate)}</span>`:""}</span><span class="v">${kr(+it.buyPrice||0)}</span></div>
-      <div class="row"><span class="k">Delar (${(it.parts||[]).length} st)</span><span class="v">${kr(partsSum(it))}</span></div>
+      <div class="row"><span class="k">Delar (köpta)</span><span class="v">${kr(partsSum(it))}</span></div>
+      ${plannedSum(it)>0?`<div class="row"><span class="k">Planerade delar (ej köpta)</span><span class="v mut">${kr(plannedSum(it))}</span></div>`:""}
       <div class="row"><span class="k">Total kostnad</span><span class="v">${kr(totalCost(it))}</span></div>
       ${it.status==="såld"
         ? `<div class="row"><span class="k">Såld för ${it.saleDate?`<span class="mut">${esc(it.saleDate)}</span>`:""}</span><span class="v">${kr(+it.salePrice||0)}</span></div>
@@ -513,7 +553,7 @@ function renderDetail(id){
       <h3>Annonser</h3>
       ${it.traderaPrice!=null?`<div class="row"><span class="k">Tradera <span class="badge till_salu">${esc(it.traderaType||"köp nu")}</span></span><span class="v">${kr(it.traderaPrice)}</span></div>`:""}
       ${it.vintedPrice!=null?`<div class="row"><span class="k">Vinted</span><span class="v">${kr(it.vintedPrice)}</span></div>`:""}
-      ${it.status!=="såld" && (it.traderaPrice!=null||it.vintedPrice!=null)?`<div class="row"><span class="k">Vinst vid begärt pris</span><span class="v ${Math.max(it.traderaPrice??0,it.vintedPrice??0)-totalCost(it)>=0?"pos":"neg"}">${kr(Math.max(it.traderaPrice??0,it.vintedPrice??0)-totalCost(it))}</span></div>`:""}
+      ${it.status!=="såld" && (it.traderaPrice!=null||it.vintedPrice!=null)?`<div class="row"><span class="k">Vinst vid begärt pris${plannedSum(it)>0?" (inkl. planerade delar)":""}</span><span class="v ${Math.max(it.traderaPrice??0,it.vintedPrice??0)-totalCost(it)-plannedSum(it)>=0?"pos":"neg"}">${kr(Math.max(it.traderaPrice??0,it.vintedPrice??0)-totalCost(it)-plannedSum(it))}</span></div>`:""}
     </div>`:""}
 
     <div class="panel">
@@ -528,8 +568,12 @@ function renderDetail(id){
       <div class="mini-form">
         <input type="text" id="partName" placeholder="Del (t.ex. batteri)">
         <input type="number" id="partCost" placeholder="kr" inputmode="numeric" style="max-width:90px">
-        <button class="btn small" id="btnAddPart">Lägg till</button>
       </div>
+      <div class="mini-form">
+        <button class="btn small sec" id="btnPlanPart" style="flex:1">Planera</button>
+        <button class="btn small" id="btnAddPart" style="flex:1">Montera nu</button>
+      </div>
+      <p class="hint" style="text-align:left">Planerade delar hamnar på inköpslistan (om de inte finns i lager). Tryck på status-taggen för att flytta en del framåt: behövs → beställd → monterad.</p>
     </div>
 
     <div class="panel">
@@ -549,14 +593,13 @@ function renderDetail(id){
         <div class="todo-row ${t.done?"done":""}">
           <input type="checkbox" data-tododone="${ix}" ${t.done?"checked":""}>
           <span class="todo-text">${esc(t.text)}</span>
-          ${t.buy && !t.done ? (t.ordered?`<span class="tag ok">beställd</span>`:`<span class="tag">köp</span>`):""}
           <button class="del" data-deltodo="${ix}">✕</button>
         </div>`).join("") || `<div class="row"><span class="k mut">Inget planerat</span></div>`}
       <div class="mini-form">
-        <input type="text" id="todoText" placeholder="t.ex. byta batteri">
+        <input type="text" id="todoText" placeholder="t.ex. felsök hårddisk, polera baksida">
         <button class="btn small" id="btnAddTodo">Lägg till</button>
       </div>
-      <label class="buy-check"><input type="checkbox" id="todoBuy"> Behöver beställas → hamnar på inköpslistan</label>
+      <p class="hint" style="text-align:left">Delar som ska köpas lägger du under Delar med "Planera" istället.</p>
     </div>
 
     ${it.notes?`<div class="panel"><h3>Anteckningar</h3><div style="font-size:15px;white-space:pre-wrap">${esc(it.notes)}</div></div>`:""}
@@ -595,18 +638,31 @@ function renderDetail(id){
       v.querySelector("#partCost").value = +s.price||0;
     }
   };
-  v.querySelector("#btnAddPart").onclick = ()=>{
+  function addPart(status){
     const n = v.querySelector("#partName").value.trim();
     const c = +v.querySelector("#partCost").value||0;
     if(!n) return;
-    (it.parts??=[]).push({name:n,cost:c});
-    // dra av från lagret om delen valdes därifrån
-    if(sel && sel.value){
-      const s = stock.find(x=>x.id===sel.value);
-      if(s && (+s.qty||0)>0){ s.qty--; saveStock(); }
+    const stockId = sel && sel.value ? sel.value : null;
+    (it.parts??=[]).push({name:n, cost:c, stockId, status});
+    // montering direkt från lagret drar av saldot
+    if(status==="monterad" && stockId && stockQty(stockId)>0){
+      stock.find(x=>x.id===stockId).qty--; saveStock();
     }
     save(); renderDetail(id);
-  };
+  }
+  v.querySelector("#btnPlanPart").onclick = ()=>addPart("behövs");
+  v.querySelector("#btnAddPart").onclick = ()=>addPart("monterad");
+  v.querySelectorAll("[data-cyc]").forEach(b=>b.onclick=()=>{
+    const pt = it.parts[+b.dataset.cyc];
+    if(pt.status==="behövs" && pt.stockId && stockQty(pt.stockId)>0){
+      // finns i lager: montera direkt och dra av
+      stock.find(x=>x.id===pt.stockId).qty--; saveStock();
+      pt.status = "monterad";
+    }else{
+      pt.status = PSTAT[(PSTAT.indexOf(pt.status)+1) % PSTAT.length];
+    }
+    save(); renderDetail(id);
+  });
   v.querySelector("#btnAddTime").onclick = ()=>{
     const n = v.querySelector("#timeNote").value.trim();
     const m = +v.querySelector("#timeMin").value||0;
@@ -618,7 +674,7 @@ function renderDetail(id){
   v.querySelector("#btnAddTodo").onclick = ()=>{
     const text = v.querySelector("#todoText").value.trim();
     if(!text) return;
-    (it.todos??=[]).push({text, buy: v.querySelector("#todoBuy").checked, done:false, ordered:false});
+    (it.todos??=[]).push({text, done:false});
     save(); renderDetail(id);
   };
   v.querySelectorAll("[data-tododone]").forEach(cb=>cb.onchange=()=>{
@@ -739,17 +795,20 @@ function compressImage(file, max=900, quality=.78){
 /* ================= Inköpslista ================= */
 function renderShopping(){
   renderLCD();
+  // Delar med status "behövs" (som inte finns i lager) eller "beställd", per iPod
   const groups = items
-    .map(it=>({it, list:(it.todos||[]).map((t,ix)=>({t,ix})).filter(x=>x.t.buy && !x.t.done)}))
+    .filter(i=>i.status!=="såld")
+    .map(it=>({it, list:(it.parts||[]).map((p,ix)=>({p,ix}))
+      .filter(x=>x.p.status==="beställd" || (x.p.status==="behövs" && !(x.p.stockId && stockQty(x.p.stockId)>0)))}))
     .filter(g=>g.list.length);
-  const total = groups.reduce((s,g)=>s+g.list.length,0);
+  const toOrder = groups.reduce((s,g)=>s+g.list.filter(x=>x.p.status==="behövs").length,0);
   const rows = groups.map(g=>
     `<div class="shop-ipod">${esc(g.it.name)}</div>` +
     g.list.map(x=>`
-      <div class="todo-row ${x.t.ordered?"done":""}">
-        <input type="checkbox" data-oid="${g.it.id}" data-oix="${x.ix}" ${x.t.ordered?"checked":""}>
-        <span class="todo-text">${esc(x.t.text)}</span>
-        ${x.t.ordered?`<span class="tag ok">beställd</span>`:""}
+      <div class="todo-row ${x.p.status==="beställd"?"done":""}">
+        <input type="checkbox" data-oid="${g.it.id}" data-oix="${x.ix}" ${x.p.status==="beställd"?"checked":""}>
+        <span class="todo-text">${esc(x.p.name)} <span class="mut">${kr(+x.p.cost||0)}</span></span>
+        ${x.p.status==="beställd"?`<span class="tag ok">beställd</span>`:""}
       </div>`).join("")
   ).join("");
 
@@ -761,33 +820,46 @@ function renderShopping(){
       <button class="del" data-delshop="${s.id}">✕</button>
     </div>`).join("");
 
+  const orderSum = groups.reduce((s,g)=>s+g.list.filter(x=>x.p.status==="behövs").reduce((a,x)=>a+(+x.p.cost||0),0),0)
+                 + shop.filter(s=>!s.ordered).reduce((a,s)=>a+s.qty*(+stock.find(x=>x.id===s.stockId)?.price||0),0);
+
   document.getElementById("viewShop").innerHTML = `
     <div class="panel">
-      <h3>Att beställa (${total} st)</h3>
-      ${rows || `<div class="row"><span class="k mut">Inget att beställa – lägg till på en iPods att göra-lista och bocka i "behöver beställas".</span></div>`}
+      <h3>Till iPods (${toOrder} att beställa)</h3>
+      ${rows || `<div class="row"><span class="k mut">Inget att beställa – planera delar på en iPod så hamnar de här.</span></div>`}
     </div>
     <div class="panel">
       <h3>Till lagret</h3>
       ${shopRows || `<div class="row"><span class="k mut">Inget extra att beställa hem</span></div>`}
       <div class="mini-form">
-        <input type="text" id="shName" placeholder="Del (t.ex. batteri 850mAh)">
+        <select id="shSel">
+          <option value="">Ny del…</option>
+          ${stock.map(s=>`<option value="${s.id}">${esc(s.name)} · ${kr(+s.price||0)}</option>`).join("")}
+        </select>
         <input type="number" id="shQty" placeholder="antal" inputmode="numeric" style="max-width:80px">
+      </div>
+      <div class="mini-form" id="shNameWrap">
+        <input type="text" id="shName" placeholder="namn på ny del">
         <button class="btn small" id="shAdd">Lägg till</button>
       </div>
       <p class="hint" style="text-align:left">Bocka i när du beställt, tryck "→ lager" när leveransen kommit så läggs antalet in i lagret.</p>
     </div>
-    ${total?`<p class="hint">Punkter från iPods försvinner härifrån först när jobbet är klart på iPoden.</p>`:""}
+    ${orderSum>0?`<p class="hint">Uppskattad kostnad för obeställt: ${kr(orderSum)}</p>`:""}
   `;
+  const shSel = document.getElementById("shSel");
+  const shName = document.getElementById("shName");
+  shSel.onchange = ()=>{ shName.style.display = shSel.value? "none":"block"; };
   document.querySelectorAll("#viewShop [data-oid]").forEach(cb=>cb.onchange=()=>{
     const it = find(cb.dataset.oid);
-    it.todos[+cb.dataset.oix].ordered = cb.checked;
+    it.parts[+cb.dataset.oix].status = cb.checked? "beställd":"behövs";
     save(); renderShopping();
   });
   document.getElementById("shAdd").onclick = ()=>{
-    const name = document.getElementById("shName").value.trim();
+    const stockId = shSel.value||null;
+    const name = stockId? stock.find(x=>x.id===stockId).name : shName.value.trim();
     const qty = +document.getElementById("shQty").value||1;
     if(!name) return;
-    shop.push({id:uid(), name, qty, ordered:false});
+    shop.push({id:uid(), stockId, name, qty, ordered:false});
     saveShop(); renderShopping();
   };
   document.querySelectorAll("#viewShop [data-shid]").forEach(cb=>cb.onchange=()=>{
@@ -800,7 +872,8 @@ function renderShopping(){
   });
   document.querySelectorAll("#viewShop [data-recv]").forEach(b=>b.onclick=()=>{
     const s = shop.find(x=>x.id===b.dataset.recv);
-    let target = stock.find(x=>x.name.toLowerCase()===s.name.toLowerCase());
+    let target = s.stockId ? stock.find(x=>x.id===s.stockId)
+               : stock.find(x=>x.name.toLowerCase()===s.name.toLowerCase());
     if(!target){
       const price = prompt("Vad kostade \""+s.name+"\" per styck? (kr)");
       if(price===null) return;
